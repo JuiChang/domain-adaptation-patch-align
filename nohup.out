@@ -1,0 +1,45 @@
+----------------- Options ---------------
+              adv_ent_min: 1                             
+               batch_size: 1                             
+                 data_dir: ./dataset/gta5_list/          
+          data_dir_target: ./dataset/cityscapes_list/    
+ data_label_folder_target: None                          
+                data_list: ./dataset/gta5_list/train.txt 
+         data_list_target: ./dataset/cityscapes_list/train.txt
+              dir_ent_min: 1                             
+             init_weights: ./model/init_weights/DeepLab_init.pth
+        lambda_adv_target: 0.001                         
+            learning_rate: 0.00025                       
+          learning_rate_D: 0.0001                        
+                    model: DeepLab                       
+                 momentum: 0.9                           
+              num_classes: 19                            
+                num_steps: 250000                        
+           num_steps_stop: 120000                        
+              num_workers: 4                             
+                    power: 0.9                           
+               print_freq: 100                           
+             restore_from: None                          
+          save_pred_every: 5000                          
+                      set: train                         
+             snapshot_dir: ./checkpoints/                
+                   source: gta5                          
+                   target: cityscapes                    
+             weight_decay: 0.0005                        
+----------------- End -------------------
+/home/tinatina/anaconda3/envs/tensorflow/lib/python3.6/site-packages/torch/nn/functional.py:2416: UserWarning: nn.functional.upsample is deprecated. Use nn.functional.interpolate instead.
+  warnings.warn("nn.functional.upsample is deprecated. Use nn.functional.interpolate instead.")
+/home/tinatina/anaconda3/envs/tensorflow/lib/python3.6/site-packages/torch/nn/_reduction.py:43: UserWarning: size_average and reduce args will be deprecated, please use reduction='mean' instead.
+  warnings.warn(warning.format(ret))
+start_iter: 0 args.num_steps: 250000
+[it 100][src seg loss 0.8687][lr 2.4991][97.85s]
+Traceback (most recent call last):
+  File "BDL.py", line 288, in <module>
+    main()
+  File "BDL.py", line 179, in main
+    trg_color_map = plot_seg(trg_seg_score)
+  File "BDL.py", line 62, in plot_seg
+    output_col = output_col.convert('RGB')
+  File "/home/tinatina/anaconda3/envs/tensorflow/lib/python3.6/site-packages/PIL/Image.py", line 1023, in convert
+    im = self.im.convert(mode, dither)
+KeyboardInterrupt
