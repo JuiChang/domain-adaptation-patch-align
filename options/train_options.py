@@ -19,18 +19,26 @@ class TrainOptions():
 
         parser.add_argument("--model", type=str, default='DeepLab', help="available options : DeepLab and VGG")
         parser.add_argument("--num-classes", type=int, default=19, help="Number of classes for cityscapes.")
-        parser.add_argument("--init-weights", type=str, default=None, help="initial model.")
+        parser.add_argument("--init-weights", type=str, default=None, help="initial weight of the segmentation network")
         parser.add_argument("--batch-size", type=int, default=1, help="input batch size.")
+        parser.add_argument("--num-clusters", type=int, default=50, help="K, mentioned in the paper") # patch paper
 
         # TODO: could try to fool also for source input?!
         parser.add_argument("--lambda-adv-fake", type=float, default=0.001,
-                            help="lambda_adv while training G while adversarial training.")
+                            help="lambda of adv loss while training G.")
         parser.add_argument("--lambda-adv-real", type=float, default=1,
-                            help="lambda_adv while training D while adversarial training.")
+                            help="lambda of adv loss while training D.")
+        parser.add_argument("--lambda-p", type=float, default=1,
+                            help="lambda of Ld mentioned in the paper") # patch paper
+        parser.add_argument("--lambda-adv-fake-p", type=float, default=0.001,
+                            help="lambda of adv loss while training G & H.") # patch paper
+        parser.add_argument("--lambda-adv-real-p", type=float, default=1,
+                            help="lambda of adv loss while training Dp, the discriminator of patch-representation.") # patch paper
 
         # TODO
         parser.add_argument("--learning-rate", type=float, default=2.5e-4, help="initial learning rate for the segmentation network.")
         parser.add_argument("--learning-rate-D", type=float, default=1e-4, help="initial learning rate for discriminator.")
+        parser.add_argument("--learning-rate-Dp", type=float, default=1e-4, help="initial learning rate for patch discriminator.")
         parser.add_argument("--power", type=float, default=0.9, help="Decay parameter to compute the learning rate (only for deeplab).")
         parser.add_argument("--momentum", type=float, default=0.9, help="Momentum component of the optimiser.")
         parser.add_argument("--weight-decay", type=float, default=0.0005, help="Regularisation parameter for L2-loss. Used in SGD in DeepLab")

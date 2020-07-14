@@ -2,6 +2,8 @@ import torch
 from model.deeplab import Deeplab
 from model.fcn8s import VGG16_FCN8s
 from model.discriminator import FCDiscriminator
+from model.discriminator import PatchDiscriminator
+from model.branch import PatchBranch
 import torch.optim as optim
 
 
@@ -39,6 +41,31 @@ def CreateDiscriminator(args):
     if args.restore_from is not None:
         print("load_discriminator")
         discriminator.load_state_dict(torch.load(args.restore_from + '_D.pth'))        
+    return discriminator, optimizer
+
+
+def CreateBranch(args):
+    branch = PatchBranch(in_channel=args.num_classes, out_channel=args.num_clusters, phase=args.set)
+    if args.restore_from is not None:
+        branch.load_state_dict(torch.load(args.restore_from + '_H.pth'))
+
+    if args.set == 'train':
+        # TODO: apply the same learning rate and other optimization settings as the segmentation model by now
+        optimizer = optim.SGD(branch.optim_parameters(args),
+                              lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
+        optimizer.zero_grad()
+        return branch, optimizer
+    else:
+        return branch
+
+def CreatePatchDiscriminator(args):
+    # TODO: 20, fixed on this number by now
+    discriminator = PatchDiscriminator(num_elements=args.num_clusters * 20 * 20)
+    optimizer = optim.Adam(discriminator.parameters(), lr=args.learning_rate_Dp, betas=(0.9, 0.99))
+    optimizer.zero_grad()
+    if args.restore_from is not None:
+        print("load_discriminator")
+        discriminator.load_state_dict(torch.load(args.restore_from + '_Dp.pth'))
     return discriminator, optimizer
 
 

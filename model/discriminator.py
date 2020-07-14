@@ -42,4 +42,34 @@ class FCDiscriminator(nn.Module):
         else:
             optimizer.param_groups[0]['lr'] = args.learning_rate_D * (0.1**(int(i/50000)))
             if len(optimizer.param_groups) > 1:
-                optimizer.param_groups[1]['lr'] = args.learning_rate_D * (0.1**(int(i/50000))) * 2  			
+                optimizer.param_groups[1]['lr'] = args.learning_rate_D * (0.1**(int(i/50000))) * 2
+
+
+class PatchDiscriminator(nn.Module):
+
+    def __init__(self, num_elements):
+        super(PatchDiscriminator, self).__init__()
+
+        self.fc = nn.Linear(num_elements, num_elements)
+        self.leaky_relu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+
+        self.bce_loss = nn.BCEWithLogitsLoss()
+
+    def forward(self, x, lbl):
+        x = self.fc(x)
+        x = self.leaky_relu(x)
+        self.loss = self.bce_loss(x, Variable(torch.FloatTensor(x.data.size()).fill_(lbl)).cuda())
+
+        return x
+
+    # copy from above by now
+    def adjust_learning_rate(self, args, optimizer, i):
+        if args.model == 'DeepLab':
+            lr = args.learning_rate_Dp * ((1 - float(i) / args.num_steps) ** (args.power))
+            optimizer.param_groups[0]['lr'] = lr
+            if len(optimizer.param_groups) > 1:
+                optimizer.param_groups[1]['lr'] = lr * 10
+        else:
+            optimizer.param_groups[0]['lr'] = args.learning_rate_Dp * (0.1**(int(i/50000)))
+            if len(optimizer.param_groups) > 1:
+                optimizer.param_groups[1]['lr'] = args.learning_rate_Dp * (0.1**(int(i/50000))) * 2

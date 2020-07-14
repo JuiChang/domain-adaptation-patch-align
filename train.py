@@ -8,7 +8,9 @@ import numpy as np
 from data import CreateSrcDataLoader
 from data import CreateTrgDataLoader
 from model import CreateModel
+from model import CreateBranch
 from model import CreateDiscriminator
+from model import CreatePatchDiscriminator
 from utils.timer import Timer
 import tensorboardX
 # import pickle
@@ -98,15 +100,23 @@ def main():
     targetloader_iter, sourceloader_iter = iter(targetloader), iter(sourceloader)
 
     # TODO: check model code
+    # TODO: if-else to determine the needed of instantiation
     model, optimizer = CreateModel(args)
+    model_H, optimizer_H = CreateBranch(args)
     model_D, optimizer_D = CreateDiscriminator(args)
+    model_Dp, optimizer_Dp = CreatePatchDiscriminator(args)
+
+    assert (args.lambda_adv_fake == 0 and args.lambda_adv_real == 0) or (
+            args.lambda_adv_fake != 0 and args.lambda_adv_real != 0), "D adversarial training weights inconsistent!"
+    assert (args.lambda_adv_fake_p == 0 and args.lambda_adv_real_p == 0) or (
+                args.lambda_adv_fake_p != 0 and args.lambda_adv_real_p != 0), "Dp adversarial training weights inconsistent!"
     
     start_iter = 0
     if args.restore_from is not None:
         start_iter = int(args.restore_from.rsplit('/', 1)[1].rsplit('_')[1])
 
-    # TODO: to comment out?
-    bce_loss = torch.nn.BCEWithLogitsLoss()
+    # # TODO: to comment out?
+    # bce_loss = torch.nn.BCEWithLogitsLoss()
     
     cudnn.enabled = True
     cudnn.benchmark = True
@@ -116,16 +126,15 @@ def main():
     model_D.cuda()
 
     snapshot_dir = os.path.join(args.checkpoint_dir, args.create_snapshot_folder)
-    # Path(snapshot_dir).mkdir(parents=True, exist_ok=True)  # already check and create in opt.print_options()
 
     logdir = os.path.join(args.checkpoint_dir, "logs", args.source + '_to_' + args.target, args.tb_create_exp_folder)
     Path(logdir).mkdir(parents=True, exist_ok=True)
     train_writer = tensorboardX.SummaryWriter(logdir)
 
     # for tensorboard
-    # there are 5 types of losses, or 4 if without target-domain soft/entropy segmentation loss
-    # loss = ['loss_seg_src', 'loss_seg_trg', 'loss_D_trg_fake', 'loss_D_src_real', 'loss_D_trg_real']
-    loss = ['loss_seg_src', 'loss_D_trg_fake', 'loss_D_src_real', 'loss_D_trg_real']
+    # TODO: whether the elements in the list below exist in all possible argument settings
+    loss = ['loss_seg_src', 'loss_D_trg_fake', 'loss_D_src_real', 'loss_D_trg_real',
+            'loss_patch_src', 'loss_Dp_trg_fake', 'loss_Dp_src_real', 'loss_Dp_trg_real']
     color_map = ['src_img_vis', 'src_lbl_vis', 'src_color_map', 'trg_img_vis', 'trg_color_map']
 
     _t['iter time'].tic()
@@ -133,17 +142,17 @@ def main():
     print("start_iter:", start_iter, "args.num_steps:", args.num_steps)
     for i in range(start_iter, args.num_steps):
 
-        # TODO: study
-        model.adjust_learning_rate(args, optimizer, i)
+        model.adjust_learning_rate(args, optimizer, i) # TODO: study
+        model_H.adjust_learning_rate(args, optimizer_H, i)
         model_D.adjust_learning_rate(args, optimizer_D, i)
+        model_Dp.adjust_learning_rate(args, optimizer_Dp, i)
 
+        optimizer.zero_grad()
+        optimizer_H.zero_grad()
+        optimizer_D.zero_grad()
+        optimizer_Dp.zero_grad()
 
         ### model M forward & backward
-        
-        optimizer.zero_grad()
-        optimizer_D.zero_grad()
-        for param in model_D.parameters():
-            param.requires_grad = False
 
         ## source domain segmentation loss
 
@@ -160,44 +169,101 @@ def main():
         loss_seg_src = model.loss
         loss_seg_src.backward()
 
+
+        # source domain patch representation and loss
+        if args.lambda_p or args.lambda_adv_fake_p:
+
+            src_patch_score = model_H(src_seg_score, lbl=src_lbl) ########## TODO: patch GT, need another loader above
+
+            loss_patch_src = model_H.loss * args.lambda_p
+            loss_patch_src.backward()
+
+
         ## target domain data
 
         trg_img, _, name = targetloader_iter.next()
         trg_img = Variable(trg_img).cuda()
-        trg_seg_score = model(trg_img)
+        trg_seg_score = model(trg_img, lbl=None)
 
         # for tensorboard visualization
         if (i + 1) % args.add_tb_image_every == 0:
             trg_img_vis = recover_ori_img(trg_img[0])
             trg_color_map = plot_seg(trg_seg_score)
 
-        outD_trg = model_D(F.softmax(trg_seg_score, dim=1), 0)
 
         if args.lambda_adv_fake:
-            # loss: fooling the discriminator
-            loss_D_trg_fake = model_D.loss
+            # loss: fooling D
 
-            loss_trg = loss_D_trg_fake * args.lambda_adv_fake
-            loss_trg.backward()
+            for param in model_D.parameters():
+                param.requires_grad = False
+
+            outD_trg = model_D(F.softmax(trg_seg_score, dim=1), 0)
+
+            loss_D_trg_fake = model_D.loss * args.lambda_adv_fake
+            loss_D_trg_fake.backward()
+
+
+        if args.lambda_adv_fake_p:
+            # target domain patch representation
+            trg_patch_score = model_H(trg_seg_score, lbl=None)  # TODO: w/o self-training by now
+
+            # loss: fooling Dp
+
+            for param in model_Dp.parameters():
+                param.requires_grad = False
+
+            outD_trg = model_Dp(F.softmax(trg_patch_score, dim=1), 0)
+
+            loss_Dp_trg_fake = model_Dp.loss * args.lambda_adv_fake_p
+            loss_Dp_trg_fake.backward()
 
 
         ### discriminator forward & backward
-        
-        for param in model_D.parameters():
-            param.requires_grad = True
-        
-        src_seg_score, trg_seg_score = src_seg_score.detach(), trg_seg_score.detach()
 
-        outD_src = model_D(F.softmax(src_seg_score, dim=1), 0)
-        loss_D_src_real = (model_D.loss / 2) * args.lambda_adv_real
-        loss_D_src_real.backward()
+        if args.lambda_adv_real:
 
-        outD_trg = model_D(F.softmax(trg_seg_score, dim=1), 1)
-        loss_D_trg_real = (model_D.loss / 2) * args.lambda_adv_real
-        loss_D_trg_real.backward()
+            for param in model_D.parameters():
+                param.requires_grad = True
+
+            src_seg_score, trg_seg_score = src_seg_score.detach(), trg_seg_score.detach()
+
+            outD_src = model_D(F.softmax(src_seg_score, dim=1), 0)
+            loss_D_src_real = (model_D.loss / 2) * args.lambda_adv_real
+            loss_D_src_real.backward()
+
+            outD_trg = model_D(F.softmax(trg_seg_score, dim=1), 1)
+            loss_D_trg_real = (model_D.loss / 2) * args.lambda_adv_real
+            loss_D_trg_real.backward()
+
+
+        if args.lambda_adv_real_p:
+
+            for param in model_Dp.parameters():
+                param.requires_grad = True
+
+            src_patch_score, trg_patch_score = src_patch_score.detach(), trg_patch_score.detach()
+
+            outDp_src = model_Dp(F.softmax(src_patch_score, dim=1), 0)
+            loss_Dp_src_real = (model_Dp.loss / 2) * args.lambda_adv_real_p
+            loss_Dp_src_real.backward()
+
+            outDp_trg = model_Dp(F.softmax(trg_patch_score, dim=1), 1)
+            loss_Dp_trg_real = (model_Dp.loss / 2) * args.lambda_adv_real_p
+            loss_Dp_trg_real.backward()
+
+
+        ### update all networks
 
         optimizer.step()
-        optimizer_D.step()
+
+        if args.lambda_p:
+            optimizer_H.step()
+
+        if args.lambda_adv_fake:
+            optimizer_D.step()
+
+        if args.lambda_adv_fake_p:
+            optimizer_Dp.step()
 
 
         ### saving and printing
@@ -212,7 +278,9 @@ def main():
         if (i + 1) % args.save_checkpoint_every == 0:
             print('taking snapshot ...')
             torch.save(model.state_dict(), os.path.join(snapshot_dir, str(i + 1) + '.pth'))
+            torch.save(model_H.state_dict(), os.path.join(snapshot_dir, str(i + 1) + '_H.pth'))
             torch.save(model_D.state_dict(), os.path.join(snapshot_dir, str(i + 1) + '_D.pth'))
+            torch.save(model_Dp.state_dict(), os.path.join(snapshot_dir, str(i + 1) + '_Dp.pth'))
             
         if (i + 1) % args.print_freq == 0:
             _t['iter time'].toc(average=False)
